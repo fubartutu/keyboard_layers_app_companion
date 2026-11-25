@@ -5,6 +5,8 @@ import sys
 
 class Config:
     _config_file = "config.ini"
+    # Optional, gitignored: per-machine overrides (e.g. [KEYMAP] path), read after config.ini
+    _local_config_file = "config.local.ini"
     _config = None
 
     @staticmethod
@@ -14,7 +16,9 @@ class Config:
         print("Loading configuration...")
         Config._config = configparser.ConfigParser()
         try:
-            Config._config.read(Config._config_file)
+            read = Config._config.read([Config._config_file, Config._local_config_file])
+            if Config._local_config_file in read:
+                print(f"Using overrides from {Config._local_config_file}")
         except configparser.Error as e:
             print(f"Error reading configuration file: {e}")
             sys.exit(2)

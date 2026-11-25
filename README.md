@@ -31,6 +31,15 @@ ref = main   # optional: read the keymap from this git branch, not the checked-o
 With `ref`, the page follows that branch (e.g. the flashed firmware) whatever is
 checked out, and picks up new commits on it within a few seconds.
 
+If the keymap lives somewhere else on another computer, don't edit `config.ini` there:
+put the differences in a `config.local.ini` next to it (gitignored, read after
+`config.ini`, and any key in it wins):
+
+```ini
+[KEYMAP]
+path = ~/source/repos/zmk-charybdis/config/charybdis.keymap
+```
+
 - **Needs** firmware with `zmk-raw-hid` + `zmk-keypeek-layer-notifier`, which report the
   layer mask (`FF 04 …`) and every key press by position (`F1 00 …`) on usage page
   `0xFF60`, over USB or Bluetooth. Optional `0xF3` status reports add battery and
