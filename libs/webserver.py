@@ -15,7 +15,7 @@ from aiohttp.web import Application, AppRunner, TCPSite, FileResponse
 
 from .config import Config
 from .consumer import ConsumerInterface
-from .keymap import parse_keymap
+from .keymap import keymap_at_ref, parse_keymap
 
 imageFolder = "./assets/"
 POLL_INTERVAL = 0.01  # seconds between keyboard reads: keeps key highlights snappy
@@ -161,7 +161,12 @@ class WebServer(ConsumerInterface):
         if self.config.keymap is None:
             return web.json_response({"error": "No [KEYMAP] path in config.ini"}, status=404)
         try:
-            data = parse_keymap(self.config.keymap)
+            if self.config.keymap_ref:
+                path, label = keymap_at_ref(self.config.keymap, self.config.keymap_ref)
+            else:
+                path, label = self.config.keymap, self.config.keymap
+            data = parse_keymap(path)
+            data["file"] = label
         except Exception as e:
             logging.error(f"Could not parse keymap {self.config.keymap}: {e}")
             return web.json_response({"error": f"Could not parse keymap: {e}"}, status=500)
@@ -204,7 +209,8 @@ class WebServer(ConsumerInterface):
             )
 
         if self.config.keymap:
-            print(f"\n⌨️  Keymap: {self.config.keymap}")
+            ref = f"  (git: {self.config.keymap_ref})" if self.config.keymap_ref else ""
+            print(f"\n⌨️  Keymap: {self.config.keymap}{ref}")
         print("\n📋 Press Ctrl+C to stop")
         print("=" * 60 + "\n")
 

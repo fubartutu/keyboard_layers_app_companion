@@ -25,7 +25,11 @@ keys as you press them, instead of showing a static image for each layer:
 ```ini
 [KEYMAP]
 path = ~/Work/zmk-charybdis/config/charybdis.keymap
+ref = main   # optional: read the keymap from this git branch, not the checked-out file
 ```
+
+With `ref`, the page follows that branch (e.g. the flashed firmware) whatever is
+checked out, and picks up new commits on it within a few seconds.
 
 - **Needs** firmware with `zmk-raw-hid` + `zmk-keypeek-layer-notifier`, which report the
   layer mask (`FF 04 …`) and every key press by position (`F1 00 …`) on usage page

@@ -101,3 +101,38 @@ def parse_keymap(path):
         "layers": layers,
         "combos": combos,
     }
+
+
+# --------------------------------------------------------------------------- git ref
+
+CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "keyboard-companion", "keymaps")
+
+
+def _git(repo, *args):
+    import subprocess
+
+    return subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True).stdout
+
+
+def keymap_at_ref(path, ref):
+    """Return (local path, label) for the keymap as committed on a git ref.
+
+    The keymap's folder (overlays included, for the auto-mouse settings) is
+    extracted once per commit into ~/.cache, so the page shows what's on a branch
+    (e.g. the one that's flashed) whatever is checked out in the working tree.
+    """
+    import io
+    import tarfile
+
+    folder = os.path.dirname(os.path.abspath(path))
+    repo = _git(folder, "rev-parse", "--show-toplevel").decode().strip()
+    rel = os.path.relpath(os.path.abspath(path), repo)
+    sha = _git(repo, "rev-parse", "--verify", ref + "^{commit}").decode().strip()
+    dest = os.path.join(CACHE_DIR, sha)
+    if not os.path.isdir(dest):
+        data = _git(repo, "archive", "--format=tar", sha, "--", os.path.dirname(rel))
+        tmp = dest + ".tmp"
+        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+            tar.extractall(tmp, filter="data")
+        os.replace(tmp, dest)
+    return os.path.join(dest, rel), f"{ref} ({sha[:7]}):{rel}"

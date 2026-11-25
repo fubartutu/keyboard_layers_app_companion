@@ -40,7 +40,10 @@ class Config:
 
         # Live keymap view: path to a ZMK .keymap file. Without it the web page shows layer images.
         Config.keymap = None
+        Config.keymap_ref = None
         if "KEYMAP" in Config._config:
+            # Optional git branch/tag/commit to read the keymap from (e.g. the flashed one)
+            Config.keymap_ref = Config._config["KEYMAP"].get("ref", "").strip() or None
             path = Config._config["KEYMAP"].get("path", "").strip()
             if path:
                 Config.keymap = os.path.expanduser(path)
