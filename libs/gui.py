@@ -29,11 +29,13 @@ class Gui(App):
             try:
                 layer = self.listener.notify_changes()
                 if layer is not None:
-                    self.img.source = imageFolder + self.conf.layers[layer]
-                    print(f"Switched to layer {layer}: {self.conf.layers[layer]}")
-                await asyncio.sleep(0.1)
+                    # Layers without their own image fall back to the last configured one
+                    image = self.conf.layers[min(layer, len(self.conf.layers) - 1)]
+                    self.img.source = imageFolder + image
+                    print(f"Switched to layer {layer}: {image}")
             except Exception as e:
                 print(f"Error: {e}")
+            await asyncio.sleep(0.1)
 
     def on_stop(self, **kwargs):
         print("App closing..(did you press ESC?)")

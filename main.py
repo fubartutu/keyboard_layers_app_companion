@@ -1,13 +1,7 @@
 import asyncio
 import sys
-from libs.gui import Gui
-from libs.server import Server
-from libs.client import Client
-from libs.webserver import WebServer
 from libs.args import parser
-from libs.keyboard_hid import Keyboard
 from libs.consumer import ConsumerInterface
-from libs.keyboard_ble_hid import KeyboardBLEHID
 
 
 async def main():
@@ -15,21 +9,37 @@ async def main():
     args = parser()
 
     if args.client:
+        # Remote desktop client (Kivy, layer images only). Imported here so the
+        # web modes don't start Kivy.
+        from libs.client import Client
+        from libs.gui import Gui
+
         cli = Client(args)
         await cli.start()
         consumer = Gui(cli)
     else:
         if args.ble:
+            from libs.keyboard_ble_hid import KeyboardBLEHID
+
             keyboard = KeyboardBLEHID()
         else:
-            keyboard = Keyboard()
+            from libs.keyboard_hid import Keyboard
+
+            keyboard = Keyboard(required=args.server)
 
         if args.server:
+            from libs.server import Server
+
             consumer = Server(keyboard, args)
-        elif args.web:
-            consumer = WebServer(keyboard, args)
         else:
-            consumer = Gui(keyboard)
+            from libs.webserver import WebServer
+
+            if args.web:
+                # Reachable from other devices on the network
+                consumer = WebServer(keyboard, args, host="0.0.0.0", open_window=args.open)
+            else:
+                # Local display: same page, localhost only, in an app window
+                consumer = WebServer(keyboard, args, host="127.0.0.1", open_window=True)
 
     try:
         await consumer.start()

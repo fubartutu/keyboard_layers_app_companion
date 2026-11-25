@@ -136,6 +136,19 @@ On Linux, you may need to:
             print(f"Error reading Bluetooth HID: {e}")
             return None
 
+    # Event API used by the web server (layer only: this protocol has no key reports)
+    product = None
+
+    @property
+    def connected(self):
+        return self.hid is not None
+
+    def read_events(self):
+        layer = self.notify_changes()
+        if layer is None:
+            return []
+        return [{"t": "layer", "default": 1, "mask": 1 | (1 << layer)}]
+
     def __del__(self):
         if self.hid:
             print("Closing HID device...")

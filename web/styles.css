@@ -516,3 +516,254 @@ body {
   transform: translateY(0);
   opacity: 1;
 }
+
+/* ------------------------------------------------------------------ live keymap */
+[hidden] {
+  display: none !important;
+}
+
+.layout-container {
+  --key: #f7f7fb;
+  --key-edge: #d6d8e6;
+  --key-ink: #2d3748;
+  --key-fade: #a0a6b8;
+  --muted: #718096;
+  --accent: #667eea;
+  --accent-ink: #ffffff;
+  --hold: #764ba2;
+  --warn: #c48a12;
+}
+
+.top-bar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 76px; /* clear of the fullscreen button */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.layer-pill {
+  padding: 6px 16px;
+  border-radius: 20px;
+  background: var(--layer-c, #667eea);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: background 0.15s ease;
+}
+
+.kbstat {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chip b {
+  color: var(--key-ink);
+  font-weight: 600;
+}
+
+.chip.low b,
+.chip.bad {
+  color: var(--warn);
+}
+
+.chip.bad {
+  border-color: var(--warn);
+}
+
+.batt {
+  width: 16px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  position: relative;
+}
+
+.batt::after {
+  content: "";
+  position: absolute;
+  right: -4px;
+  top: 1.5px;
+  width: 2px;
+  height: 3px;
+  background: currentColor;
+  border-radius: 0 1px 1px 0;
+}
+
+.batt i {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  bottom: 1px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.keymap {
+  display: block;
+  width: 100%;
+  max-height: calc(100dvh - 120px);
+  margin-top: 28px; /* room for the layer pill */
+}
+
+.fullscreen-mode .keymap,
+:fullscreen .keymap {
+  max-height: calc(100vh - 100px);
+}
+
+.keymap-error {
+  color: #c53030;
+  font-weight: 500;
+  padding: 24px;
+}
+
+.k rect.cap {
+  fill: var(--key);
+  stroke: var(--key-edge);
+  stroke-width: 1.2;
+  transition: fill 0.06s, stroke 0.06s;
+}
+
+.k .tap {
+  fill: var(--key-ink);
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.k .hold {
+  fill: var(--muted);
+  font-size: 10px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.k.fade .tap {
+  fill: var(--key-fade);
+  font-weight: 500;
+}
+
+.k.none .tap {
+  fill: transparent;
+}
+
+.k rect.band {
+  fill: var(--key-c);
+  opacity: 0;
+}
+
+.k.layerhold rect.band {
+  opacity: 0.9;
+}
+
+.k.layerhold .hold {
+  fill: var(--key-c);
+  font-weight: 600;
+}
+
+/* pressed */
+.k.on rect.cap {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.k.on .tap,
+.k.on .hold {
+  fill: var(--accent-ink);
+}
+
+/* hold-tap held past its tapping term (modifier) */
+.k.held rect.cap {
+  fill: color-mix(in srgb, var(--hold) 18%, var(--key));
+  stroke: var(--hold);
+  stroke-width: 2.6;
+}
+
+.k.held .hold {
+  fill: var(--hold);
+  font-weight: 700;
+}
+
+/* the key holding the current layer */
+.k.lkey rect.cap {
+  fill: color-mix(in srgb, var(--key-c) 22%, var(--key));
+  stroke: var(--key-c);
+  stroke-width: 2.6;
+}
+
+.ball circle.b {
+  fill: var(--key);
+  stroke: var(--key-edge);
+  stroke-width: 1.2;
+  transition: fill 0.1s;
+}
+
+.ball.move circle.b {
+  fill: color-mix(in srgb, var(--layer-c) 30%, var(--key));
+  stroke: var(--layer-c);
+  stroke-width: 2.4;
+}
+
+.ball text {
+  fill: var(--muted);
+  font-size: 11px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.combo rect {
+  fill: #ffffff;
+  stroke: var(--key-edge);
+}
+
+.combo text {
+  fill: var(--muted);
+  font-size: 9.5px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.combo.on rect {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.combo.on text {
+  fill: var(--accent-ink);
+}
+
+@media (max-width: 768px) {
+  .layout-container {
+    padding: 56px 12px 56px !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .keymap {
+    margin-top: 64px; /* layer pill and status chips wrap onto two lines */
+  }
+}

@@ -1,4 +1,5 @@
 import configparser
+import os
 import sys
 
 
@@ -36,6 +37,16 @@ class Config:
                 f"\n\n\nNeither KEYBOARD_BLE_HID or KEYBOARD_USB_HID section found in config file: {Config._config_file}\n\n\n"
             )
             sys.exit(2)
+
+        # Live keymap view: path to a ZMK .keymap file. Without it the web page shows layer images.
+        Config.keymap = None
+        if "KEYMAP" in Config._config:
+            path = Config._config["KEYMAP"].get("path", "").strip()
+            if path:
+                Config.keymap = os.path.expanduser(path)
+                if not os.path.isfile(Config.keymap):
+                    print(f"Keymap file not found: {Config.keymap} - falling back to layer images")
+                    Config.keymap = None
 
         if "LAYER_IMAGES" in Config._config:
             values = Config._config["LAYER_IMAGES"].values()

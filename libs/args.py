@@ -34,6 +34,12 @@ def parser():
         help="Start web server to display keyboard layout in browser",
     )
     parser.add_argument(
+        "-o",
+        "--open",
+        action="store_true",
+        help="With --web: also open the page in a local app window",
+    )
+    parser.add_argument(
         "-b",
         "--ble",
         action="store_true",
@@ -49,5 +55,8 @@ def parser():
 
     if args.web and (args.client or args.server):
         parser.error("--web cannot be used with --client or --server")
+
+    if args.open and not args.web:
+        parser.error("--open requires --web (without --web the window opens anyway)")
 
     return args

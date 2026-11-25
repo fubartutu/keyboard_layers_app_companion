@@ -17,18 +17,17 @@
         window.addEventListener("load", () => {
           navigator.serviceWorker
             .register("/serviceworker.js")
-            .then((registration) => {
-              console.log("Service Worker registered:", registration);
-            })
-            .catch((error) => {
-              console.error("Service Worker registration failed:", error);
-            });
+            .catch((error) => console.error("Service Worker registration failed:", error));
         });
       }
     </script>
     <div class="container">
       <main class="main-content">
         <div class="layout-container" id="layoutContainer">
+          <div class="top-bar">
+            <span class="layer-pill" id="layerPill" hidden></span>
+            <div class="kbstat" id="kbstat" hidden></div>
+          </div>
           <div class="connection-status" id="connectionStatus">
             <span class="status-indicator" id="statusIndicator"></span>
             <span class="status-text" id="statusText">Connecting...</span>
@@ -51,22 +50,23 @@
             </svg>
           </button>
           <div class="layout-display">
+            <!-- Live keymap (when config.ini has a [KEYMAP] path) -->
+            <svg id="keymap" class="keymap" xmlns="http://www.w3.org/2000/svg" hidden></svg>
+            <!-- Layer images (otherwise) -->
             <img
               id="layoutImage"
               class="layout-image"
               src="assets/virtual_keyboard.png"
               alt="Current keyboard layout"
+              hidden
             />
-          </div>
-
-          <div class="loading-overlay" id="loadingOverlay">
-            <div class="loading-spinner"></div>
-            <p>Loading keyboard layout...</p>
+            <p class="keymap-error" id="keymapError" hidden></p>
           </div>
         </div>
       </main>
     </div>
 
+    <script src="keymap.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

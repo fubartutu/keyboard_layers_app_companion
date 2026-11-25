@@ -17,6 +17,37 @@ Display the selected keyboard layer layout on screen to assist you in memorizing
 - **Customizable layouts** — Use the included Miryoku examples or create your own layer images
 - **Cross-platform** — Runs on Windows, macOS, and Linux
 
+## Live keymap view (this fork)
+
+With a `[KEYMAP]` path in `config.ini`, the app draws that ZMK keymap and lights up
+keys as you press them, instead of showing a static image for each layer:
+
+```ini
+[KEYMAP]
+path = ~/Work/zmk-charybdis/config/charybdis.keymap
+```
+
+- **Needs** firmware with `zmk-raw-hid` + `zmk-keypeek-layer-notifier`, which report the
+  layer mask (`FF 04 …`) and every key press by position (`F1 00 …`) on usage page
+  `0xFF60`, over USB or Bluetooth. Optional `0xF3` status reports add battery and
+  connection chips (see `modules/status-report` in zmk-charybdis).
+- **Shows** the active layer (including the default-layer switch used for gaming),
+  pressed keys, held home-row mods, the thumb key holding the layer, and combos.
+  Keymap edits appear within a few seconds.
+- **Geometry** is the Charybdis 4x6 (`web/keymap.js`); other boards need their own
+  positions there.
+- Without `[KEYMAP]` the page falls back to the layer images.
+
+Run modes:
+
+| Command | What you get |
+|---|---|
+| `companion` | Local display: page on `127.0.0.1` in an app window (Chromium `--app` / `omarchy-launch-webapp`) |
+| `companion --web` | Page served to the local network (`http://<this-pc>:1977`) |
+| `companion --web --open` | Both: network page plus the local app window |
+
+The Kivy window is now only used by `--client` (layer images).
+
 ## Overview
 
 It supports displaying the layout on a remote screen, so you can use a tablet or similar to save space on your main screen. You can use a web browser or a desktop application for that.

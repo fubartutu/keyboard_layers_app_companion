@@ -1,18 +1,24 @@
 import asyncio
-import mimetypes
-import socket
-from pathlib import Path
-from aiohttp import web, WSMsgType
-from aiohttp.web import Application, AppRunner, TCPSite, FileResponse
+import errno
 import json
 import logging
+import mimetypes
+import shutil
+import socket
+import subprocess
+import webbrowser
 from datetime import datetime
-import errno
+from pathlib import Path
 
-from .consumer import ConsumerInterface
+from aiohttp import web, WSMsgType
+from aiohttp.web import Application, AppRunner, TCPSite, FileResponse
+
 from .config import Config
+from .consumer import ConsumerInterface
+from .keymap import parse_keymap
 
 imageFolder = "./assets/"
+POLL_INTERVAL = 0.01  # seconds between keyboard reads: keeps key highlights snappy
 
 
 class WebSocketManager:
@@ -30,10 +36,7 @@ class WebSocketManager:
         )
 
     async def broadcast(self, message: str):
-        if not self.clients:
-            return
-
-        for client in self.clients:
+        for client in list(self.clients):
             try:
                 await client.send_str(message)
             except Exception as e:
@@ -42,13 +45,22 @@ class WebSocketManager:
 
 
 class WebServer(ConsumerInterface):
-    def __init__(self, keyboard_listener, args):
-        self.host = "0.0.0.0"
+    """Serves the web page and streams the keyboard's layer/key/status events over a WebSocket.
+
+    host="0.0.0.0" makes it reachable from other devices on the network; the local
+    desktop mode binds 127.0.0.1 and opens the page in an app window (open_window=True).
+    """
+
+    def __init__(self, keyboard_listener, args, host="0.0.0.0", open_window=False):
+        self.host = host
         self.port = args.server_port
-        self.current_layer = 0
+        self.open_window = open_window
         self.keyboard_listener = keyboard_listener
         self.args = args
         self.config = Config()
+
+        # Live state, sent to each new client so it can draw straight away
+        self.state = {"mask": 1, "default": 1, "down": set(), "status": None}
 
         self.websocket_manager = WebSocketManager()
         self.app: Application = None
@@ -57,27 +69,32 @@ class WebServer(ConsumerInterface):
         self.keyboard_task = None
 
         logging.basicConfig(level=logging.INFO)
+        # Don't log every asset request
+        logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 
-    def initial_msg(self):
-        message = {
-            "all_layers": self.config.layers,
-        }
-        return json.dumps(message)
-
-    def build_msg(self):
-        message = {
-            "layer": self.current_layer,
-            "image": self.config.layers[self.current_layer],
-        }
-        return json.dumps(message)
+    def hello_msg(self):
+        kb = self.keyboard_listener
+        return json.dumps(
+            {
+                "t": "hello",
+                "keymap": self.config.keymap is not None,
+                "all_layers": self.config.layers,
+                "connected": kb.connected,
+                "product": kb.product,
+                "mask": self.state["mask"],
+                "default": self.state["default"],
+                "down": sorted(self.state["down"]),
+                "status": self.state["status"],
+            }
+        )
 
     async def websocket_handler(self, request):
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(heartbeat=20)
         await ws.prepare(request)
         await self.websocket_manager.add_client(ws)
 
         try:
-            await ws.send_str(self.initial_msg())
+            await ws.send_str(self.hello_msg())
             async for msg in ws:
                 if msg.type == WSMsgType.ERROR:
                     logging.error(f"WebSocket error: {ws.exception()}")
@@ -104,15 +121,15 @@ class WebServer(ConsumerInterface):
                 if content_type is None:
                     content_type = "application/octet-stream"
 
-            response = FileResponse(
+            return FileResponse(
                 path=full_path,
+                status=status,
                 headers={
-                    "Cache-Control": "public, max-age=31536000",  # Cache for 1 year
+                    # Revalidate every load so page updates show up straight away
+                    "Cache-Control": "no-cache",
                     "Content-Type": content_type,
                 },
             )
-
-            return response
 
         except Exception as e:
             logging.error(f"Error serving static file {file_path}: {e}")
@@ -122,27 +139,40 @@ class WebServer(ConsumerInterface):
         return await self.serve_static_file("web/index.html", "text/html")
 
     async def serve_json(self, _):
-        return await self.serve_static_file("web/manifest.json", "text/json")
+        return await self.serve_static_file("web/manifest.json", "application/json")
 
     async def serve_css(self, _):
         return await self.serve_static_file("web/styles.css", "text/css")
 
     async def serve_js(self, request):
         file = request.match_info.get("file")
+        if "/" in file or ".." in file:
+            return await self.serve_404()
         return await self.serve_static_file(f"web/{file}.js", "application/javascript")
 
     async def serve_assets(self, request):
         filename = request.match_info.get("filename")
-        asset_path = f"{imageFolder}/{filename}"
+        if "/" in filename or ".." in filename:
+            return await self.serve_404()
+        return await self.serve_static_file(f"{imageFolder}/{filename}")
 
-        return await self.serve_static_file(asset_path)
+    async def serve_keymap(self, _):
+        """The keymap is parsed on every request, so edits show up without a restart."""
+        if self.config.keymap is None:
+            return web.json_response({"error": "No [KEYMAP] path in config.ini"}, status=404)
+        try:
+            data = parse_keymap(self.config.keymap)
+        except Exception as e:
+            logging.error(f"Could not parse keymap {self.config.keymap}: {e}")
+            return web.json_response({"error": f"Could not parse keymap: {e}"}, status=500)
+        return web.json_response(data, headers={"Cache-Control": "no-store"})
 
     async def serve_error_page(self, file_path: str, status_code: int):
         return await self.serve_static_file(
             file_path, content_type="text/html", status=status_code
         )
 
-    async def serve_404(self, request):
+    async def serve_404(self, request=None):
         return await self.serve_error_page("web/404.html", 404)
 
     async def serve_500(self):
@@ -152,8 +182,7 @@ class WebServer(ConsumerInterface):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(("8.8.8.8", 80))
-                local_ip = s.getsockname()[0]
-                return local_ip
+                return s.getsockname()[0]
         except Exception as e:
             logging.warning(f"Could not determine network IP address: {e}")
             return None
@@ -165,31 +194,48 @@ class WebServer(ConsumerInterface):
 
         print("📱 Local Access:")
         print(f"   Web Interface: http://localhost:{self.port}")
-        print(f"   WebSocket:     ws://localhost:{self.port}/ws")
 
-        network_ip = self.get_network_ip()
+        network_ip = self.get_network_ip() if self.host != "127.0.0.1" else None
         if network_ip:
             print("\n🌐 Network Access:")
             print(f"   Web Interface: http://{network_ip}:{self.port}")
-            print(f"   WebSocket:     ws://{network_ip}:{self.port}/ws")
             print(
                 "\n💡 Access from other devices on your network using the network URL"
             )
-        else:
-            print(
-                "\n⚠️  Network IP detection failed - use localhost for local access only"
-            )
 
-        print("\n📋 Usage:")
-        print("   • Open the web interface in any browser")
-        print("   • Press Ctrl+C to stop the server")
+        if self.config.keymap:
+            print(f"\n⌨️  Keymap: {self.config.keymap}")
+        print("\n📋 Press Ctrl+C to stop")
         print("=" * 60 + "\n")
+
+    def launch_window(self):
+        """Open the page as a borderless app window (Chromium-style --app), or a browser tab."""
+        url = f"http://localhost:{self.port}"
+        launcher = shutil.which("omarchy-launch-webapp")
+        if launcher:
+            cmd = [launcher, url]
+        else:
+            browser = next(
+                (b for b in ("chromium", "google-chrome-stable", "google-chrome", "brave", "microsoft-edge")
+                 if shutil.which(b)),
+                None,
+            )
+            cmd = [browser, f"--app={url}"] if browser else None
+        if cmd:
+            try:
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+                return
+            except Exception as e:
+                logging.warning(f"Could not open app window ({e}), using the default browser")
+        webbrowser.open(url)
 
     def setup_routes(self):
         self.app.router.add_get("/", self.serve_index)
         self.app.router.add_get("/index.html", self.serve_index)
         self.app.router.add_get("/styles.css", self.serve_css)
         self.app.router.add_get("/manifest.json", self.serve_json)
+        self.app.router.add_get("/keymap.json", self.serve_keymap)
         self.app.router.add_get("/{file}.js", self.serve_js)
         self.app.router.add_get("/assets/{filename}", self.serve_assets)
         self.app.router.add_get("/ws", self.websocket_handler)
@@ -208,28 +254,23 @@ class WebServer(ConsumerInterface):
             except OSError as e:
                 if e.errno == errno.EADDRINUSE:
                     print(f"\n❌ Error: Port {self.port} is already in use!")
-                    await self.runner.cleanup()
-                    raise SystemExit(1)
                 else:
                     print(f"\n❌ Network Error: {e}")
                     print(f"   Failed to bind to {self.host}:{self.port}")
-                    await self.runner.cleanup()
-                    raise SystemExit(1)
+                await self.runner.cleanup()
+                raise SystemExit(1)
 
             self.display_startup_urls()
+            if self.open_window:
+                self.launch_window()
 
             self.keyboard_task = asyncio.create_task(self.monitor_keyboard())
             logging.info("Keyboard monitoring started")
+            await self.keyboard_task
 
-            try:
-                while True:
-                    await asyncio.sleep(1)
-            except KeyboardInterrupt:
-                logging.info("Received shutdown signal")
-                raise
-
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
             logging.info("Server shutdown requested")
+            await self.cleanup()
             raise
         except SystemExit:
             raise
@@ -239,66 +280,45 @@ class WebServer(ConsumerInterface):
             raise
 
     async def monitor_keyboard(self):
+        kb = self.keyboard_listener
+        last_top = None
         while True:
+            await asyncio.sleep(POLL_INTERVAL)
             try:
-                await asyncio.sleep(0.1)
-                layer_change = self.keyboard_listener.notify_changes()
-                if layer_change is not None:
-                    await self.handle_layer_change(layer_change)
-
-            except KeyboardInterrupt:
-                logging.info("Keyboard monitoring task cancelled")
-                break
+                events = kb.read_events()
             except Exception as e:
-                logging.error(f"Error in keyboard monitoring: {e}")
-                disconnect_message = {
-                    "type": "keyboard_disconnected",
-                    "message": "Keyboard disconnected - layer updates unavailable",
-                    "timestamp": datetime.now().isoformat(),
-                }
-                await self.websocket_manager.broadcast(json.dumps(disconnect_message))
-                break
-        logging.info("Keyboard monitoring task ended")
-
-    async def handle_layer_change(self, layer: int):
-        try:
-            if layer < 0 or layer >= len(self.config.layers):
-                logging.warning(f"Invalid layer number received: {layer}")
-                return
-
-            if layer == self.current_layer:
-                return
-
-            self.current_layer = layer
-            await self.websocket_manager.broadcast(self.build_msg())
-            logging.info(
-                f"Layer changed to {layer}, broadcasted to {len(self.websocket_manager.clients)} clients"
-            )
-
-        except Exception as e:
-            logging.error(f"Error handling layer change: {e}")
+                logging.error(f"Error reading keyboard: {e}")
+                continue
+            for ev in events:
+                t = ev["t"]
+                if t == "layer":
+                    self.state["mask"], self.state["default"] = ev["mask"], ev["default"]
+                    top = max(ev["mask"].bit_length() - 1, 0)
+                    if top != last_top:
+                        last_top = top
+                        logging.info(f"Layer {top}")
+                elif t == "pos":
+                    (self.state["down"].add if ev["down"] else self.state["down"].discard)(ev["pos"])
+                elif t == "status":
+                    self.state["status"] = ev
+                elif t == "connection":
+                    if not ev["connected"]:
+                        self.state.update(down=set(), status=None)
+                    ev["timestamp"] = datetime.now().isoformat()
+                await self.websocket_manager.broadcast(json.dumps(ev))
 
     async def cleanup(self):
         logging.info("Starting web server cleanup...")
         try:
             if self.keyboard_task and not self.keyboard_task.done():
-                logging.info("Cancelling keyboard monitoring task...")
                 self.keyboard_task.cancel()
                 try:
                     await self.keyboard_task
                 except asyncio.CancelledError:
-                    logging.info("Keyboard monitoring task cancelled")
+                    pass
 
             if self.websocket_manager.clients:
-                logging.info(
-                    f"Closing {len(self.websocket_manager.clients)} WebSocket connections..."
-                )
-
-                shutdown_message = {
-                    "type": "server_shutdown",
-                    "message": "Server is shutting down",
-                    "timestamp": datetime.now().isoformat(),
-                }
+                shutdown_message = {"t": "server_shutdown", "timestamp": datetime.now().isoformat()}
                 try:
                     await asyncio.wait_for(
                         self.websocket_manager.broadcast(json.dumps(shutdown_message)),
@@ -307,22 +327,18 @@ class WebServer(ConsumerInterface):
                 except asyncio.TimeoutError:
                     logging.warning("Timeout while notifying clients of shutdown")
 
-                clients_copy = self.websocket_manager.clients.copy()
-                for client in clients_copy:
+                for client in list(self.websocket_manager.clients):
                     try:
                         await client.close()
                     except Exception as e:
                         logging.warning(f"Error closing WebSocket client: {e}")
-
                 self.websocket_manager.clients.clear()
 
             if self.site:
-                logging.info("Stopping HTTP site...")
                 await self.site.stop()
                 self.site = None
 
             if self.runner:
-                logging.info("Cleaning up app runner...")
                 await self.runner.cleanup()
                 self.runner = None
 
@@ -332,23 +348,11 @@ class WebServer(ConsumerInterface):
             logging.error(f"Error during cleanup: {e}")
 
     def stop(self):
-        """Stop the web server and clean up resources (sync wrapper)"""
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 asyncio.create_task(self.cleanup())
             else:
                 asyncio.run(self.cleanup())
-
-            logging.info("Web server stop initiated")
-
         except Exception as e:
             logging.error(f"Error stopping web server: {e}")
-            try:
-                if self.site:
-                    self.site = None
-                if self.runner:
-                    self.runner = None
-                logging.info("Basic cleanup completed")
-            except Exception as cleanup_error:
-                logging.error(f"Error in fallback cleanup: {cleanup_error}")

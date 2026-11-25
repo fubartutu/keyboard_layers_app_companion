@@ -4,24 +4,34 @@
  */
 
 const imageFolder = "/assets/";
+const KEYMAP_POLL_MS = 3000; // pick up keymap edits without a reload
 
 class KeyboardLayoutClient {
   constructor() {
     this.websocket = null;
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
     this.reconnectDelay = 1000;
-    this.maxReconnectDelay = 30000;
+    this.maxReconnectDelay = 10000;
     this.isConnecting = false;
+    this.mode = null; // "keymap" or "images"
+    this.allLayers = [];
+    this.keyboard = {connected: false, product: null};
 
     this.elements = {
       layoutImage: document.getElementById("layoutImage"),
+      keymap: document.getElementById("keymap"),
+      keymapError: document.getElementById("keymapError"),
+      layerPill: document.getElementById("layerPill"),
+      kbstat: document.getElementById("kbstat"),
       connectionStatus: document.getElementById("connectionStatus"),
       statusIndicator: document.getElementById("statusIndicator"),
       statusText: document.getElementById("statusText"),
       layoutContainer: document.getElementById("layoutContainer"),
       fullscreenButton: document.getElementById("fullscreenButton"),
     };
+
+    this.view = new KeymapView(this.elements.keymap);
+    this.view.onLayer = (name, color) => this.showLayer(name, color);
 
     this.init();
   }
@@ -45,11 +55,7 @@ class KeyboardLayoutClient {
 
     try {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-
-      console.log(`Connecting to WebSocket: ${wsUrl}`);
-      this.websocket = new WebSocket(wsUrl);
-
+      this.websocket = new WebSocket(`${protocol}//${window.location.host}/ws`);
       this.websocket.onopen = this.onOpen.bind(this);
       this.websocket.onmessage = this.onMessage.bind(this);
       this.websocket.onclose = this.onClose.bind(this);
@@ -62,7 +68,6 @@ class KeyboardLayoutClient {
   }
 
   onOpen() {
-    console.log("WebSocket connection established");
     this.isConnecting = false;
     this.reconnectAttempts = 0;
     this.reconnectDelay = 1000;
@@ -70,24 +75,127 @@ class KeyboardLayoutClient {
   }
 
   onMessage(event) {
+    let msg;
     try {
-      const message = JSON.parse(event.data);
-      if (message.all_layers) {
-        return this.initializeImages(message.all_layers);
-      }
-      this.handleLayerUpdate(message);
+      msg = JSON.parse(event.data);
     } catch (error) {
       console.error("Failed to parse WebSocket message:", error);
+      return;
+    }
+    switch (msg.t) {
+      case "hello":
+        this.allLayers = msg.all_layers || [];
+        this.setMode(msg.keymap ? "keymap" : "images");
+        this.setKeyboard(msg.connected, msg.product);
+        this.showKbStatus(msg.status);
+        this.view.setLayer(msg.mask, msg.default);
+        this.view.setDown(msg.down || []);
+        this.showImage();
+        break;
+      case "layer":
+        this.view.setLayer(msg.mask, msg.default);
+        this.showImage();
+        break;
+      case "pos":
+        this.view.setKey(msg.pos, msg.down);
+        break;
+      case "status":
+        this.showKbStatus(msg);
+        break;
+      case "connection":
+        this.setKeyboard(msg.connected, msg.product);
+        if (!msg.connected) { this.view.setDown([]); this.showKbStatus(null); }
+        break;
+      case "server_shutdown":
+        this.updateConnectionStatus("disconnected", "Server stopped");
+        break;
     }
   }
 
-  initializeImages(layers) {
-    for (const layer of layers) {
-      if (layer.trim() === "") continue; // Skip empty layer names
-      var img = new Image();
-      img.src = `${imageFolder}${layer}`;
+  setMode(mode) {
+    if (this.mode === mode) return;
+    this.mode = mode;
+    this.elements.keymap.toggleAttribute("hidden", mode !== "keymap"); // SVG has no .hidden property
+    this.elements.layoutImage.hidden = mode !== "images";
+    clearInterval(this.keymapPoll);
+    if (mode === "keymap") {
+      this.loadKeymap();
+      this.keymapPoll = setInterval(() => this.loadKeymap(), KEYMAP_POLL_MS);
+    } else {
+      for (const layer of this.allLayers) {
+        if (layer.trim() !== "") new Image().src = `${imageFolder}${layer}`; // preload
+      }
     }
-    this.elements.layoutImage.src = `${imageFolder}${layers[0]}`;
+  }
+
+  async loadKeymap() {
+    const err = this.elements.keymapError;
+    try {
+      const r = await fetch("/keymap.json", {cache: "no-store"});
+      const data = await r.json();
+      if (data.error) throw new Error(data.error);
+      err.hidden = true;
+      if (data.mtime === this.view.mtime) return;
+      this.view.mtime = data.mtime;
+      this.view.load(data);
+    } catch (e) {
+      err.textContent = "Could not load keymap: " + (e.message || e);
+      err.hidden = false;
+    }
+  }
+
+  // Image mode: show the image for the top active layer (layers past the list use the last one)
+  showImage() {
+    if (this.mode !== "images" || !this.allLayers.length) return;
+    const top = Math.max(Math.floor(Math.log2(this.view.mask | this.view.defaultMask)), 0);
+    const image = this.allLayers[Math.min(top, this.allLayers.length - 1)];
+    this.elements.layoutImage.src = `${imageFolder}${image}`;
+    this.showLayer(`Layer ${top}`, null);
+  }
+
+  showLayer(name, color) {
+    const pill = this.elements.layerPill;
+    pill.hidden = false;
+    pill.textContent = name;
+    pill.style.setProperty("--layer-c", color || "#667eea");
+  }
+
+  setKeyboard(connected, product) {
+    this.keyboard = {connected, product};
+    this.refreshStatusText();
+  }
+
+  refreshStatusText() {
+    if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) return;
+    if (this.keyboard.connected) {
+      this.updateConnectionStatus("connected", this.keyboard.product || "Keyboard connected");
+    } else {
+      this.updateConnectionStatus("connecting", "Waiting for keyboard...");
+    }
+  }
+
+  // Battery and connection chips, from the keyboard's 0xF3 status report
+  showKbStatus(s) {
+    const el = this.elements.kbstat;
+    el.hidden = !s;
+    if (!s) return;
+    const esc = x => String(x).replace(/[&<>"]/g, c => "&#" + c.charCodeAt(0) + ";");
+    const batt = (label, pct, tip) => {
+      if (pct === null || pct === undefined)
+        return `<span class="chip" title="${esc(tip)}">${label} <b>–</b></span>`;
+      return `<span class="chip${pct <= 20 ? " low" : ""}" title="${esc(tip)}">${label} ` +
+        `<span class="batt"><i style="width:${Math.max(0, Math.min(100, pct)) * 0.12}px"></i></span><b>${pct}%</b></span>`;
+    };
+    let out = batt("L", s.battery.left, s.halves ? "Left half battery" : "Left half not connected to the right half");
+    out += batt("R", s.battery.right, "Right half battery" + (s.usbPowered ? " (charging)" : ""));
+    if (!s.halves) out += `<span class="chip bad" title="The right half can't see the left half">left half offline</span>`;
+    if (s.output === "USB") {
+      out += `<span class="chip">output <b>USB</b></span>`;
+    } else {
+      const state = s.profileOpen ? "not paired" : s.profileConnected ? "connected" : "not connected";
+      out += `<span class="chip${s.profileConnected ? "" : " bad"}"><b>BT ${esc(s.profile)}</b> ${state}</span>`;
+    }
+    el.innerHTML = out;
   }
 
   onClose(event) {
@@ -105,14 +213,7 @@ class KeyboardLayoutClient {
   onError(event) {
     console.error("WebSocket error:", event);
     this.isConnecting = false;
-    this.elements.layoutImage.src = "assets/virtual_keyboard.png";
     this.updateConnectionStatus("disconnected", "Connection Error");
-  }
-
-  handleLayerUpdate(message) {
-    const { layer, image } = message;
-    console.log(`Layer changed to: ${layer}, Image: ${image}`);
-    this.elements.layoutImage.src = `${imageFolder}${image}`;
   }
 
   updateConnectionStatus(status, text) {
@@ -123,16 +224,9 @@ class KeyboardLayoutClient {
     indicator.classList.add(status);
     statusText.textContent = text;
 
-    console.log(`Connection status: ${status} - ${text}`);
   }
 
   scheduleReconnect() {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log("Max reconnection attempts reached");
-      this.updateConnectionStatus("disconnected", "Connection Failed");
-      return;
-    }
-
     this.reconnectAttempts++;
     const delay = Math.min(
       this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
