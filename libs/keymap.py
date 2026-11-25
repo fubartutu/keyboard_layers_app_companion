@@ -67,6 +67,14 @@ def parse_keymap(path):
                 hold_taps[m.group(1)] = {"hold": b.group(1), "tap": b.group(2)}
     macros = [m.group(1) for m in re.finditer(r"(\w+)\s*:\s*[\w-]+\s*\{", src)
               if '"zmk,behavior-macro' in _block(src, m.end() - 1)]
+    # tap-dance behaviours: name -> [binding for 1 tap, 2 taps, ...]
+    tap_dances = {}
+    for m in re.finditer(r"(\w+)\s*:\s*[\w-]+\s*\{", src):
+        body = _block(src, m.end() - 1)
+        if '"zmk,behavior-tap-dance"' in body:
+            b = re.search(r"bindings\s*=\s*([^;]*);", body)
+            if b:
+                tap_dances[m.group(1)] = [_bindings(x)[0] for x in re.findall(r"<([^>]*)>", b.group(1))]
 
     km_at = src.index('"zmk,keymap"')
     km = src[km_at:]
@@ -98,6 +106,7 @@ def parse_keymap(path):
         "defines": defines,
         "holdTaps": hold_taps,
         "macros": macros,
+        "tapDances": tap_dances,
         "layers": layers,
         "combos": combos,
     }

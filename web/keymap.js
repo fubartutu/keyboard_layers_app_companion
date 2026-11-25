@@ -98,6 +98,17 @@ class KeymapView {
 
   analyze(b) {
     const [beh, ...p] = b;
+    // Tap-dance: draw its first real binding (td_bspc -> &u_lt NUM BSPC on one tap).
+    // Miryoku's u_to_U_* do nothing on one tap, so they show the double tap as "2× →Nav".
+    const td = this.km.tapDances?.[beh];
+    if (td?.length) {
+      const i = td.findIndex(x => !["none", "trans", beh].includes(x[0]));
+      if (i >= 0) {
+        const a = this.analyze(td[i]);
+        if (i > 0 && a.tap) a.tap = {...a.tap, taps: i + 1};
+        return a;
+      }
+    }
     const ht = this.km.holdTaps[beh];
     if (ht) {
       const part = (kind, arg) => kind === "kp" ? {out: parseKey(arg)}
@@ -126,6 +137,7 @@ class KeymapView {
 
   partLabel(part, isHold) {
     if (!part) return "";
+    if (part.taps) return part.taps + "× " + this.partLabel({...part, taps: 0}, isHold);
     if (part.out) return isHold && isModKey(part.out.key) && !part.out.mods.size ? MOD_NAME[part.out.key] : outLabel(part.out);
     if (part.layer !== undefined) {
       const n = this.short[part.layer] || ("L" + part.layer);
