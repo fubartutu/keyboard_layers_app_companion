@@ -52,6 +52,22 @@ Run modes:
 
 The Kivy window is now only used by `--client` (layer images).
 
+Running from source on Windows (PowerShell):
+
+```powershell
+winget install astral-sh.uv
+git clone https://github.com/fubartutu/keyboard_layers_app_companion.git
+cd keyboard_layers_app_companion
+uv sync
+# hidapi.dll (needed by the `hid` package) goes in the repo folder
+Invoke-WebRequest https://github.com/libusb/hidapi/releases/latest/download/hidapi-win.zip -OutFile $env:TEMP\hidapi.zip
+Expand-Archive $env:TEMP\hidapi.zip $env:TEMP\hidapi -Force
+Copy-Item $env:TEMP\hidapi\x64\hidapi.dll .
+uv run main.py          # or: uv run main.py --web
+```
+
+`ref` needs `git` on PATH. The local view opens in the default browser.
+
 ## Overview
 
 It supports displaying the layout on a remote screen, so you can use a tablet or similar to save space on your main screen. You can use a web browser or a desktop application for that.

@@ -1,5 +1,12 @@
 import asyncio
+import os
 import sys
+
+if sys.platform == "win32":
+    # The `hid` package loads hidapi.dll with ctypes, which on Windows ignores PATH
+    # and the current folder. Let a hidapi.dll dropped in the repo folder be found.
+    os.add_dll_directory(os.path.dirname(os.path.abspath(__file__)))
+
 from libs.args import parser
 from libs.consumer import ConsumerInterface
 
