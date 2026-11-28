@@ -27,6 +27,9 @@ class Config:
             keyboard = Config._config["KEYBOARD_USB_HID"]
             Config.usage_page = int(keyboard.get("usage_page", "0xFF60"), 16)
             Config.usage = int(keyboard.get("usage", "0x61"), 16)
+            # Optional: only use the keyboard whose HID product string is this (e.g. the
+            # ZMK_KEYBOARD_NAME), when another keyboard also exposes the raw HID interface
+            Config.product = keyboard.get("product", "").strip() or None
 
         if "KEYBOARD_BLE_HID" in Config._config:
             keyboard = Config._config["KEYBOARD_BLE_HID"]

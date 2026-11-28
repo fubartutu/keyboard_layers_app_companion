@@ -85,6 +85,10 @@ class Keyboard:
             for i in hid.enumerate()
             if i["usage_page"] == self.config.usage_page
             and i["usage"] == self.config.usage
+            and (
+                not getattr(self.config, "product", None)
+                or (i.get("product_string") or "") == self.config.product
+            )
         ]
         for info in interfaces:
             try:
