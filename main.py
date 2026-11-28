@@ -2,6 +2,14 @@ import asyncio
 import os
 import sys
 
+for stream in (sys.stdout, sys.stderr):
+    # The startup banner has emoji. On Windows, output that goes to a pipe or file
+    # uses the ANSI code page (cp1252), which can't encode them and crashes print().
+    try:
+        stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 if sys.platform == "win32":
     # The `hid` package loads hidapi.dll with ctypes, which on Windows ignores PATH
     # and the current folder. Let a hidapi.dll dropped in the repo folder be found.
