@@ -57,7 +57,17 @@ const BT = {BT_CLR:"BT clear",BT_NXT:"BT →",BT_PRV:"BT ←",BT_CLR_ALL:"BT clr
 const OUT = {OUT_USB:"USB",OUT_BLE:"BLE",OUT_TOG:"USB/BLE"};
 const RGB = {RGB_TOG:"RGB",RGB_EFF:"Effect",RGB_EFR:"Effect ←",RGB_BRI:"Bright+",RGB_BRD:"Bright−",RGB_HUI:"Hue+",
   RGB_HUD:"Hue−",RGB_SAI:"Sat+",RGB_SAD:"Sat−",RGB_SPI:"Speed+",RGB_SPD:"Speed−",RGB_ON:"RGB on",RGB_OFF:"RGB off"};
-const MOUSE_LABEL = {LCLK:"L click",RCLK:"R click",MCLK:"M click",MB4:"Back",MB5:"Fwd"};
+const MOUSE_LABEL = {LCLK:"L click",RCLK:"R click",MCLK:"M click",MB1:"L click",MB2:"R click",MB3:"M click",
+  MB4:"Back",MB5:"Fwd"};
+const MOUSE_MOVE = {MOVE_UP:"Mouse ↑",MOVE_DOWN:"Mouse ↓",MOVE_LEFT:"Mouse ←",MOVE_RIGHT:"Mouse →"};
+const MOUSE_SCROLL = {SCRL_UP:"Scroll ↑",SCRL_DOWN:"Scroll ↓",SCRL_LEFT:"Scroll ←",SCRL_RIGHT:"Scroll →"};
+const EXT_POWER = {EP_TOG:"Ext pwr",EP_ON:"Ext pwr on",EP_OFF:"Ext pwr off"};
+const BACKLIGHT = {BL_TOG:"Backlight",BL_ON:"BL on",BL_OFF:"BL off",BL_INC:"BL+",BL_DEC:"BL−",BL_CYCLE:"BL cycle"};
+// ZMK behaviours with no parameters, and the labels drawn for them
+const PLAIN = {bootloader:"Boot",sys_reset:"Reset",soft_off:"Off",studio_unlock:"Studio",caps_word:"Caps W",
+  key_repeat:"Repeat",gresc:"Esc/`",leader:"Leader"};
+// An unknown behaviour: drop Miryoku/zmk-helpers prefixes and tidy the name ("u_my_thing" -> "my thing")
+const tidyName = name => name.replace(/^(u|zmk|my)_/, "").replace(/_/g, " ");
 const HOLD_AFTER_MS = 220; // a hold-tap key down this long is shown as held
 
 // ---------------------------------------------------------------- geometry
@@ -137,6 +147,9 @@ class KeymapView {
         return a;
       }
     }
+    // Mod-morph / adaptive key (u_caps_word -> &caps_word, Shift: &kp CAPS): draw the plain binding
+    const morph = this.km.morphs?.[beh];
+    if (morph && morph.normal[0] !== beh) return this.analyze(morph.normal);
     const ht = this.km.holdTaps[beh];
     if (ht) {
       const part = (kind, arg) => kind === "kp" ? {out: parseKey(arg)}
@@ -153,14 +166,17 @@ class KeymapView {
       case "bt": return {tap: {label: p[0] === "BT_SEL" ? "BT " + p[1] : (BT[p[0]] || p[0])}};
       case "out": return {tap: {label: OUT[p[0]] || p[0]}};
       case "rgb_ug": return {tap: {label: RGB[p[0]] || p[0]}};
-      case "bootloader": return {tap: {label: "Boot"}};
-      case "sys_reset": return {tap: {label: "Reset"}};
-      case "caps_word": return {tap: {label: "Caps W"}};
-      case "key_repeat": return {tap: {label: "Repeat"}};
+      case "mmv": return {tap: {label: MOUSE_MOVE[p[0]] || p[0]}};
+      case "msc": return {tap: {label: MOUSE_SCROLL[p[0]] || p[0]}};
+      case "ext_power": return {tap: {label: EXT_POWER[p[0]] || p[0]}};
+      case "bl": return {tap: {label: BACKLIGHT[p[0]] || p[0]}};
+      case "sk": return {tap: {label: "1×" + outLabel(parseKey(p[0]))}}; // sticky key
+      case "kt": return {tap: {label: "⇄" + outLabel(parseKey(p[0]))}}; // key toggle
       case "lbl": return {tap: {label: p.join(" ")}}; // plain label (Oryx custom labels, combos)
       default:
-        if (this.km.macros.includes(beh)) return {tap: {label: beh.replace(/_/g, " ")}};
-        return {tap: {label: beh + (p.length ? " " + p.join(" ") : "")}};
+        if (PLAIN[beh]) return {tap: {label: PLAIN[beh]}};
+        if (this.km.macros.includes(beh)) return {tap: {label: tidyName(beh)}};
+        return {tap: {label: tidyName(beh) + (p.length ? " " + p.join(" ") : "")}};
     }
   }
 

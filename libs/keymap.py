@@ -76,6 +76,20 @@ def parse_keymap(path):
             if b:
                 tap_dances[m.group(1)] = [_bindings(x)[0] for x in re.findall(r"<([^>]*)>", b.group(1))]
 
+    # mod-morphs (one binding, another with a modifier held) and adaptive keys (a binding
+    # that changes after certain keys): name -> {"normal": binding, "shifted": binding}
+    morphs = {}
+    for m in re.finditer(r"(\w+)\s*:\s*[\w-]+\s*\{", src):
+        body = _block(src, m.end() - 1)
+        b = re.search(r"bindings\s*=\s*([^;]*);", body)
+        if not b:
+            continue
+        parts = [_bindings(x) for x in re.findall(r"<([^>]*)>", b.group(1))]
+        if '"zmk,behavior-mod-morph"' in body and len(parts) >= 2 and parts[0] and parts[1]:
+            morphs[m.group(1)] = {"normal": parts[0][0], "shifted": parts[1][0]}
+        elif '"zmk,behavior-adaptive-key"' in body and parts and parts[0]:
+            morphs[m.group(1)] = {"normal": parts[0][0], "shifted": None}
+
     km_at = src.index('"zmk,keymap"')
     km = src[km_at:]
     layers = []
@@ -107,6 +121,7 @@ def parse_keymap(path):
         "holdTaps": hold_taps,
         "macros": macros,
         "tapDances": tap_dances,
+        "morphs": morphs,
         "layers": layers,
         "combos": combos,
     }
