@@ -552,6 +552,38 @@ body {
   flex-wrap: wrap;
 }
 
+.kbpick {
+  display: inline-flex;
+  margin-left: auto;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  pointer-events: auto; /* the top bar lets clicks through */
+}
+
+.kbpick button {
+  border: none;
+  border-radius: 16px;
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.kbpick button:hover {
+  color: var(--key-ink);
+}
+
+.kbpick button.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
 .chip {
   display: inline-flex;
   align-items: center;

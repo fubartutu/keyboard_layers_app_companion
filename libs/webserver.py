@@ -72,6 +72,7 @@ class WebServer(ConsumerInterface):
         self.runner: AppRunner = None
         self.site: TCPSite = None
         self.keyboard_task = None
+        self.last_top = None
 
         logging.basicConfig(level=logging.INFO)
         # Don't log every asset request
@@ -91,8 +92,24 @@ class WebServer(ConsumerInterface):
                 "default": self.state["default"],
                 "down": sorted(self.state["down"]),
                 "status": self.state["status"],
+                "boards": self.boards_msg(),
             }
         )
+
+    def boards_msg(self):
+        kb = self.keyboard_listener
+        return kb.boards_msg() if hasattr(kb, "boards_msg") else None
+
+    async def handle_client_msg(self, data):
+        """{"t": "pin", "kb": <id> or null}: show that keyboard only, or follow the one in use."""
+        try:
+            msg = json.loads(data)
+        except ValueError:
+            return
+        kb = self.keyboard_listener
+        if msg.get("t") == "pin" and hasattr(kb, "pin"):
+            await self.send_events(kb.pin(msg.get("kb")))
+            logging.info(f"Pinned {msg.get('kb')}" if msg.get("kb") else "Following the keyboard in use")
 
     async def websocket_handler(self, request):
         ws = web.WebSocketResponse(heartbeat=20)
@@ -102,7 +119,9 @@ class WebServer(ConsumerInterface):
         try:
             await ws.send_str(self.hello_msg())
             async for msg in ws:
-                if msg.type == WSMsgType.ERROR:
+                if msg.type == WSMsgType.TEXT:
+                    await self.handle_client_msg(msg.data)
+                elif msg.type == WSMsgType.ERROR:
                     logging.error(f"WebSocket error: {ws.exception()}")
                     break
                 elif msg.type == WSMsgType.CLOSE:
@@ -308,7 +327,7 @@ class WebServer(ConsumerInterface):
 
     async def monitor_keyboard(self):
         kb = self.keyboard_listener
-        last_top = None
+        self.last_top = None
         while True:
             await asyncio.sleep(POLL_INTERVAL)
             try:
@@ -316,28 +335,31 @@ class WebServer(ConsumerInterface):
             except Exception as e:
                 logging.error(f"Error reading keyboard: {e}")
                 continue
-            for ev in events:
-                t = ev["t"]
-                if t == "layer":
-                    self.state["mask"], self.state["default"] = ev["mask"], ev["default"]
-                    top = max(ev["mask"].bit_length() - 1, 0)
-                    if top != last_top:
-                        last_top = top
-                        logging.info(f"Layer {top}")
-                elif t == "pos":
-                    (self.state["down"].add if ev["down"] else self.state["down"].discard)(ev["pos"])
-                elif t == "status":
-                    self.state["status"] = ev
-                elif t == "active":
-                    # Another keyboard is in use: start from its state
-                    self.state.update(mask=ev["mask"], default=1, down=set(), status=None)
-                    last_top = None
-                    logging.info(f"Showing {ev['product'] or ev['kb']}")
-                elif t == "connection":
-                    if not ev["connected"]:
-                        self.state.update(down=set(), status=None)
-                    ev["timestamp"] = datetime.now().isoformat()
-                await self.websocket_manager.broadcast(json.dumps(ev))
+            await self.send_events(events)
+
+    async def send_events(self, events):
+        for ev in events:
+            t = ev["t"]
+            if t == "layer":
+                self.state["mask"], self.state["default"] = ev["mask"], ev["default"]
+                top = max(ev["mask"].bit_length() - 1, 0)
+                if top != self.last_top:
+                    self.last_top = top
+                    logging.info(f"Layer {top}")
+            elif t == "pos":
+                (self.state["down"].add if ev["down"] else self.state["down"].discard)(ev["pos"])
+            elif t == "status":
+                self.state["status"] = ev
+            elif t == "active":
+                # Another keyboard is on screen: start from its state
+                self.state.update(mask=ev["mask"], default=1, down=set(), status=None)
+                self.last_top = None
+                logging.info(f"Showing {ev['product'] or ev['kb']}")
+            elif t == "connection":
+                if not ev["connected"]:
+                    self.state.update(down=set(), status=None)
+                ev["timestamp"] = datetime.now().isoformat()
+            await self.websocket_manager.broadcast(json.dumps(ev))
 
     async def cleanup(self):
         logging.info("Starting web server cleanup...")

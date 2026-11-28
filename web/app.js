@@ -23,6 +23,7 @@ class KeyboardLayoutClient {
       keymapError: document.getElementById("keymapError"),
       layerPill: document.getElementById("layerPill"),
       kbstat: document.getElementById("kbstat"),
+      kbpick: document.getElementById("kbpick"),
       connectionStatus: document.getElementById("connectionStatus"),
       statusIndicator: document.getElementById("statusIndicator"),
       statusText: document.getElementById("statusText"),
@@ -92,6 +93,10 @@ class KeyboardLayoutClient {
         this.view.setLayer(msg.mask, msg.default);
         this.view.setDown(msg.down || []);
         this.showImage();
+        if (msg.boards) this.showBoards(msg.boards, true);
+        break;
+      case "boards":
+        this.showBoards(msg);
         break;
       case "layer":
         this.view.setLayer(msg.mask, msg.default);
@@ -189,6 +194,43 @@ class KeyboardLayoutClient {
       this.updateConnectionStatus("connected", this.keyboard.product || "Keyboard connected");
     } else {
       this.updateConnectionStatus("connecting", "Waiting for keyboard...");
+    }
+  }
+
+  // Keyboard picker: shown when more than one keyboard is connected (or one is pinned).
+  // "Auto" follows whichever keyboard is typed on; a keyboard's name pins it.
+  // The server keeps the choice for every open page. Each page also saves the latest
+  // one in its browser, and hands it back if the server restarted and forgot it.
+  showBoards(msg, hello = false) {
+    const saved = localStorage.getItem("pinnedKeyboard");
+    if (hello && !msg.pinned && saved && msg.boards.some(b => b.kb === saved)) {
+      this.pin(saved);
+      return; // the reply redraws the picker
+    }
+    localStorage.setItem("pinnedKeyboard", msg.pinned || "");
+    const el = this.elements.kbpick;
+    const shown = msg.boards.filter(b => b.connected || b.kb === msg.pinned);
+    el.hidden = shown.length < 2 && !msg.pinned;
+    if (el.hidden) return;
+    el.replaceChildren();
+    const add = (label, kb, title) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.title = title;
+      b.classList.toggle("on", msg.pinned === kb);
+      b.addEventListener("click", () => this.pin(kb));
+      el.append(b);
+    };
+    add("Auto", null, "Show whichever keyboard is being typed on");
+    for (const b of shown) {
+      add(b.name, b.kb, b.connected ? `Always show the ${b.name}${b.product && b.product !== b.name ? ` (${b.product})` : ""}` : `${b.name} (not connected)`);
+    }
+  }
+
+  pin(kb) {
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      this.websocket.send(JSON.stringify({t: "pin", kb}));
     }
   }
 

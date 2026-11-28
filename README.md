@@ -67,6 +67,10 @@ revision = latest   # optional: pin a revision instead
 - **Live** layer and key reports use the Oryx raw HID protocol (`libs/keyboard_oryx.py`):
   the app sends the pairing command once and then only listens. No firmware changes;
   Keymapp can stay open.
+- **Picking a keyboard:** when both are connected, buttons at the top right (Auto,
+  Charybdis, Voyager) let you keep one on screen whichever you type on. Auto goes back
+  to following the one in use. The choice applies to every open page, and a page hands
+  it back to the app if the app restarts.
 - The Voyager only reports its top layer, and double-tap actions aren't drawn.
 
 Run modes:
