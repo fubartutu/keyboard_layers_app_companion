@@ -85,6 +85,7 @@ class KeyboardLayoutClient {
     switch (msg.t) {
       case "hello":
         this.allLayers = msg.all_layers || [];
+        this.switchKeyboard(msg.kb || "main");
         this.setMode(msg.keymap ? "keymap" : "images");
         this.setKeyboard(msg.connected, msg.product);
         this.showKbStatus(msg.status);
@@ -105,6 +106,14 @@ class KeyboardLayoutClient {
       case "connection":
         this.setKeyboard(msg.connected, msg.product);
         if (!msg.connected) { this.view.setDown([]); this.showKbStatus(null); }
+        break;
+      case "active": // another keyboard is in use (e.g. the Voyager): draw its keymap
+        this.switchKeyboard(msg.kb);
+        this.setKeyboard(msg.connected, msg.product);
+        this.showKbStatus(null);
+        this.view.setDown([]);
+        this.view.setLayer(msg.mask, 1);
+        this.showImage();
         break;
       case "server_shutdown":
         this.updateConnectionStatus("disconnected", "Server stopped");
@@ -128,11 +137,20 @@ class KeyboardLayoutClient {
     }
   }
 
+  switchKeyboard(kb) {
+    if (this.kb === kb) return;
+    this.kb = kb;
+    this.view.mtime = null; // draw the new keyboard's keymap even if it hasn't changed
+    if (this.mode === "keymap") this.loadKeymap();
+  }
+
   async loadKeymap() {
     const err = this.elements.keymapError;
+    const kb = this.kb || "main";
     try {
-      const r = await fetch("/keymap.json", {cache: "no-store"});
+      const r = await fetch(`/keymap.json?kb=${encodeURIComponent(kb)}`, {cache: "no-store"});
       const data = await r.json();
+      if (kb !== (this.kb || "main")) return; // switched keyboards while this was loading
       if (data.error) throw new Error(data.error);
       err.hidden = true;
       if (data.mtime === this.view.mtime) return;

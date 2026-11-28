@@ -60,22 +60,50 @@ const RGB = {RGB_TOG:"RGB",RGB_EFF:"Effect",RGB_EFR:"Effect ←",RGB_BRI:"Bright
 const MOUSE_LABEL = {LCLK:"L click",RCLK:"R click",MCLK:"M click",MB4:"Back",MB5:"Fwd"};
 const HOLD_AFTER_MS = 220; // a hold-tap key down this long is shown as held
 
-// ---------------------------------------------------------------- geometry (Charybdis 4x6)
+// ---------------------------------------------------------------- geometry
 const U = 58, GAP = 0.08;
-const COL_OFF = [0.45, 0.45, 0.15, 0, 0.15, 0.3];
-const POS = [];
-for (let r = 0; r < 4; r++) {
-  for (let c = 0; c < 6; c++) POS[r * 12 + c] = {x: c + 0.5, y: r + 0.5 + COL_OFF[c], rot: 0};
-  for (let c = 0; c < 6; c++) POS[r * 12 + 6 + c] = {x: 7.9 + c + 0.5, y: r + 0.5 + COL_OFF[5 - c], rot: 0};
+
+// Charybdis 4x6 (ZMK key positions)
+function charybdis() {
+  const COL_OFF = [0.45, 0.45, 0.15, 0, 0.15, 0.3];
+  const pos = [];
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 6; c++) pos[r * 12 + c] = {x: c + 0.5, y: r + 0.5 + COL_OFF[c], rot: 0};
+    for (let c = 0; c < 6; c++) pos[r * 12 + 6 + c] = {x: 7.9 + c + 0.5, y: r + 0.5 + COL_OFF[5 - c], rot: 0};
+  }
+  const MIRROR = 13.4 + 0.5 + 0.5;
+  const thumbsL = {48: [3.85, 4.95, 8], 49: [4.9, 5.15, 16], 50: [5.9, 5.5, 26], 53: [4.7, 6.2, 16], 54: [5.65, 6.55, 26]};
+  for (const [p, [x, y, r]] of Object.entries(thumbsL)) pos[p] = {x, y, rot: r};
+  pos[51] = {x: MIRROR - 5.9, y: 5.5, rot: -26};
+  pos[52] = {x: MIRROR - 4.9, y: 5.15, rot: -16};
+  pos[55] = {x: MIRROR - 5.65, y: 6.55, rot: -26};
+  return {pos, ball: {x: MIRROR - 3.3, y: 6.0, r: 0.95}, view: {w: 14.4 * U, h: 7.35 * U}};
 }
-const MIRROR = 13.4 + 0.5 + 0.5;
-const thumbsL = {48: [3.85, 4.95, 8], 49: [4.9, 5.15, 16], 50: [5.9, 5.5, 26], 53: [4.7, 6.2, 16], 54: [5.65, 6.55, 26]};
-for (const [p, [x, y, r]] of Object.entries(thumbsL)) POS[p] = {x, y, rot: r};
-POS[51] = {x: MIRROR - 5.9, y: 5.5, rot: -26};
-POS[52] = {x: MIRROR - 4.9, y: 5.15, rot: -16};
-POS[55] = {x: MIRROR - 5.65, y: 6.55, rot: -26};
-const BALL = {x: MIRROR - 3.3, y: 6.0, r: 0.95};
-const VIEW = {w: 14.4 * U, h: 7.35 * U};
+
+// ZSA Voyager, in Oryx key order: left half (4 rows of 6, then 2 thumbs), then the right half.
+// Column stagger from zsa/qmk_firmware keyboards/zsa/voyager/keyboard.json.
+function voyager() {
+  const L_OFF = [0.5, 0.5, 0.25, 0, 0.25, 0.5], R_OFF = [0.5, 0.25, 0, 0.25, 0.5, 0.5], RX = 8.5;
+  const pos = [];
+  for (let r = 0; r < 4; r++)
+    for (let c = 0; c < 6; c++) {
+      pos[r * 6 + c] = {x: c + 0.5, y: r + 0.5 + L_OFF[c], rot: 0};
+      pos[26 + r * 6 + c] = {x: RX + c + 0.5, y: r + 0.5 + R_OFF[c], rot: 0};
+    }
+  pos[24] = {x: 5.6, y: 5.05, rot: 15};
+  pos[25] = {x: 6.6, y: 5.4, rot: 25};
+  pos[50] = {x: RX - 0.6, y: 5.4, rot: -25};
+  pos[51] = {x: RX + 0.4, y: 5.05, rot: -15};
+  return {pos, ball: null, view: {w: (RX + 6) * U, h: 6.1 * U}};
+}
+
+const GEOMETRY = {charybdis: charybdis(), voyager: voyager()};
+// Every keyboard is drawn in the same frame (the largest), centred, so the window keeps its
+// size when the page switches between keyboards
+const FRAME = {
+  w: Math.max(...Object.values(GEOMETRY).map(g => g.view.w)),
+  h: Math.max(...Object.values(GEOMETRY).map(g => g.view.h)),
+};
 
 const NS = "http://www.w3.org/2000/svg";
 const svgEl = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag);
@@ -129,6 +157,7 @@ class KeymapView {
       case "sys_reset": return {tap: {label: "Reset"}};
       case "caps_word": return {tap: {label: "Caps W"}};
       case "key_repeat": return {tap: {label: "Repeat"}};
+      case "lbl": return {tap: {label: p.join(" ")}}; // plain label (Oryx custom labels, combos)
       default:
         if (this.km.macros.includes(beh)) return {tap: {label: beh.replace(/_/g, " ")}};
         return {tap: {label: beh + (p.length ? " " + p.join(" ") : "")}};
@@ -148,6 +177,7 @@ class KeymapView {
 
   load(data) {
     this.km = data;
+    this.geo = GEOMETRY[data.geometry] || GEOMETRY.charybdis;
     const byNum = {};
     for (const [k, v] of Object.entries(data.defines))
       if (v < data.layers.length && /^[A-Z][A-Z0-9_]*$/.test(k) && !(v in byNum)) byNum[v] = k;
@@ -204,7 +234,8 @@ class KeymapView {
   draw() {
     const svg = this.svg;
     svg.innerHTML = "";
-    svg.setAttribute("viewBox", `0 0 ${VIEW.w} ${VIEW.h}`);
+    const {pos: POS, ball: BALL, view: VIEW} = this.geo;
+    svg.setAttribute("viewBox", `${(VIEW.w - FRAME.w) / 2} ${(VIEW.h - FRAME.h) / 2} ${FRAME.w} ${FRAME.h}`);
     const s = (1 - GAP) * U;
     this.keys = POS.map((p, i) => {
       const g = svgEl("g", {class: "k", transform: `translate(${p.x * U} ${p.y * U}) rotate(${p.rot})`}, svg);
@@ -214,11 +245,14 @@ class KeymapView {
       const hold = svgEl("text", {class: "hold", x: 0, y: s / 2 - 14}, g);
       return {g, tap, hold, pos: i};
     });
-    const bg = svgEl("g", {class: "ball"}, svg);
-    svgEl("circle", {class: "b", cx: BALL.x * U, cy: BALL.y * U, r: BALL.r * U}, bg);
-    const bt = svgEl("text", {x: BALL.x * U, y: BALL.y * U}, bg);
-    bt.textContent = "trackball";
-    this.ball = bg;
+    this.ball = null;
+    if (BALL) {
+      const bg = svgEl("g", {class: "ball"}, svg);
+      svgEl("circle", {class: "b", cx: BALL.x * U, cy: BALL.y * U, r: BALL.r * U}, bg);
+      const bt = svgEl("text", {x: BALL.x * U, y: BALL.y * U}, bg);
+      bt.textContent = "trackball";
+      this.ball = bg;
+    }
     this.comboEls = this.combos.map(({c, label, layers}) => {
       const [a, b] = c.positions.map(p => POS[p]);
       const cx = (a.x + b.x) / 2 * U, cy = ((a.y + b.y) / 2 + 0.3) * U;
@@ -278,6 +312,7 @@ class KeymapView {
       g.classList.toggle("on", c.positions.every(p => this.down.has(p)));
     }
     // auto-mouse: the firmware switches to the mouse layer while the ball moves
+    if (!this.ball) return;
     const mouseish = this.mouseLayer >= 0 && L >= this.mouseLayer;
     this.ball.classList.toggle("move", mouseish);
     this.ball.querySelector("text").textContent = mouseish ? this.km.layers[L].name : "trackball";

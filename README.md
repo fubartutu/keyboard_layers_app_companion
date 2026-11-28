@@ -47,9 +47,27 @@ path = ~/source/repos/zmk-charybdis/config/charybdis.keymap
 - **Shows** the active layer (including the default-layer switch used for gaming),
   pressed keys, held home-row mods, the thumb key holding the layer, and combos.
   Keymap edits appear within a few seconds.
-- **Geometry** is the Charybdis 4x6 (`web/keymap.js`); other boards need their own
-  positions there.
+- **Geometry** is the Charybdis 4x6 or the ZSA Voyager (`web/keymap.js`); other boards
+  need their own positions there.
 - Without `[KEYMAP]` the page falls back to the layer images.
+
+### ZSA Voyager
+
+With an `[ORYX]` section the app also watches a Voyager on stock Oryx firmware and shows
+whichever keyboard you last typed on (the window keeps its size when it switches):
+
+```ini
+[ORYX]
+layout = Embob      # the layout ID in its oryx.zsa.io URL
+revision = latest   # optional: pin a revision instead
+```
+
+- **Keymap** comes from Oryx's public API (`libs/oryx.py`), re-fetched at most once a
+  minute, so a newly flashed layout shows up without a restart.
+- **Live** layer and key reports use the Oryx raw HID protocol (`libs/keyboard_oryx.py`):
+  the app sends the pairing command once and then only listens. No firmware changes;
+  Keymapp can stay open.
+- The Voyager only reports its top layer, and double-tap actions aren't drawn.
 
 Run modes:
 

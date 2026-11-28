@@ -58,6 +58,11 @@ class WebServer(ConsumerInterface):
         self.keyboard_listener = keyboard_listener
         self.args = args
         self.config = Config()
+        self.oryx = None
+        if self.config.oryx_layout:
+            from .oryx import OryxLayout
+
+            self.oryx = OryxLayout(self.config.oryx_layout, self.config.oryx_revision, self.config.oryx_geometry)
 
         # Live state, sent to each new client so it can draw straight away
         self.state = {"mask": 1, "default": 1, "down": set(), "status": None}
@@ -77,7 +82,8 @@ class WebServer(ConsumerInterface):
         return json.dumps(
             {
                 "t": "hello",
-                "keymap": self.config.keymap is not None,
+                "keymap": self.config.keymap is not None or self.oryx is not None,
+                "kb": self.active_kb(),
                 "all_layers": self.config.layers,
                 "connected": kb.connected,
                 "product": kb.product,
@@ -156,8 +162,21 @@ class WebServer(ConsumerInterface):
             return await self.serve_404()
         return await self.serve_static_file(f"{imageFolder}/{filename}")
 
-    async def serve_keymap(self, _):
-        """The keymap is parsed on every request, so edits show up without a restart."""
+    def active_kb(self):
+        return getattr(self.keyboard_listener, "active", "main")
+
+    async def serve_keymap(self, request):
+        """The keymap is parsed on every request, so edits show up without a restart.
+
+        ?kb=voyager serves the Oryx layout instead (fetched at most once a minute).
+        """
+        kb = request.query.get("kb") or self.active_kb()
+        if kb == "voyager" and self.oryx:
+            try:
+                data = await asyncio.to_thread(self.oryx.get)
+            except Exception as e:
+                return web.json_response({"error": f"Could not fetch the Oryx layout: {e}"}, status=502)
+            return web.json_response(data, headers={"Cache-Control": "no-store"})
         if self.config.keymap is None:
             return web.json_response({"error": "No [KEYMAP] path in config.ini"}, status=404)
         try:
@@ -211,6 +230,8 @@ class WebServer(ConsumerInterface):
         if self.config.keymap:
             ref = f"  (git: {self.config.keymap_ref})" if self.config.keymap_ref else ""
             print(f"\n⌨️  Keymap: {self.config.keymap}{ref}")
+        if self.config.oryx_layout:
+            print(f"⌨️  Voyager: Oryx layout {self.config.oryx_layout} ({self.config.oryx_revision})")
         print("\n📋 Press Ctrl+C to stop")
         print("=" * 60 + "\n")
 
@@ -307,6 +328,11 @@ class WebServer(ConsumerInterface):
                     (self.state["down"].add if ev["down"] else self.state["down"].discard)(ev["pos"])
                 elif t == "status":
                     self.state["status"] = ev
+                elif t == "active":
+                    # Another keyboard is in use: start from its state
+                    self.state.update(mask=ev["mask"], default=1, down=set(), status=None)
+                    last_top = None
+                    logging.info(f"Showing {ev['product'] or ev['kb']}")
                 elif t == "connection":
                     if not ev["connected"]:
                         self.state.update(down=set(), status=None)

@@ -30,9 +30,17 @@ async def main():
 
             keyboard = KeyboardBLEHID()
         else:
+            from libs.config import Config
             from libs.keyboard_hid import Keyboard
 
-            keyboard = Keyboard(required=args.server)
+            if Config().oryx_layout:
+                # Also watch the ZSA Voyager, and show whichever keyboard is in use
+                from libs.keyboard_oryx import OryxKeyboard
+                from libs.keyboards import Keyboards
+
+                keyboard = Keyboards({"main": Keyboard(required=False), "voyager": OryxKeyboard()})
+            else:
+                keyboard = Keyboard(required=args.server)
 
         if args.server:
             from libs.server import Server

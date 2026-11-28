@@ -58,6 +58,16 @@ class Config:
                     print(f"Keymap file not found: {Config.keymap} - falling back to layer images")
                     Config.keymap = None
 
+        # ZSA Voyager: the Oryx layout to draw while it's the keyboard in use
+        Config.oryx_layout = None
+        Config.oryx_revision = "latest"
+        Config.oryx_geometry = "voyager"
+        if "ORYX" in Config._config:
+            oryx = Config._config["ORYX"]
+            Config.oryx_layout = oryx.get("layout", "").strip() or None
+            Config.oryx_revision = oryx.get("revision", "").strip() or "latest"
+            Config.oryx_geometry = oryx.get("geometry", "").strip() or "voyager"
+
         if "LAYER_IMAGES" in Config._config:
             values = Config._config["LAYER_IMAGES"].values()
             Config.layers = [v for v in values]

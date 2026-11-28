@@ -85,6 +85,7 @@ class Keyboard:
             for i in hid.enumerate()
             if i["usage_page"] == self.config.usage_page
             and i["usage"] == self.config.usage
+            and i["vendor_id"] != 0x3297  # ZSA (Voyager): Oryx protocol, read by libs/keyboard_oryx.py
             and (
                 not getattr(self.config, "product", None)
                 or (i.get("product_string") or "") == self.config.product
